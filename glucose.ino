@@ -4,7 +4,7 @@
 #include "WiFiSSLClient.h"
 
 #include "arduino_secrets.h"
-#include "sprites.h"
+#include "icons.h"
 #include "parse_http.h"
 
 /* -------------------------------------------------------------------------- */
@@ -16,8 +16,8 @@ int status = WL_IDLE_STATUS;
 
 // if you don't want to use DNS (and reduce your sketch size)
 // use the numeric IP instead of the name for the server:
-
-char server[] = "www.google.com";
+//IPAddress server(74,125,232,128);  // numeric IP for Google (no DNS)
+char server[] = "example.com";
 char request[] = "GET / HTTP/1.1";
 
 // Initialize the Ethernet client library
@@ -46,7 +46,7 @@ void setup() {
 
   // Check for the WiFi module:
   if (WiFi.status() == WL_NO_MODULE) {
-    matrix.loadFrame(no_wifi);
+    matrix.loadFrame(Icon::no_wifi);
     Serial.println("Communication with WiFi module failed!");
     while (true); // Don't continue
   }
@@ -119,12 +119,14 @@ void loop() {
 /* -------------------------------------------------------------------------- */
 void makeRequest() {
 /* -------------------------------------------------------------------------- */
-  status = WiFi.status();
-  if (status != WL_CONNECTED) {
+  // Make sure wifi is connected
+  int current_status = WiFi.status();
+  if (current_status != WL_CONNECTED) {
+    status = current_status;
     waitConnectWifi();
   }
 
-  if (client.connect(server, 80)) {
+  if (client.connect(server, 443)) {
     connected = true;
     Serial.println("Making GET request...");
 
@@ -148,26 +150,26 @@ void waitConnectWifi() {
     Serial.print("Attempting to connect to SSID: ");
     Serial.println(ssid);
 
-    matrix.loadFrame(no_wifi);
+    matrix.loadFrame(Icon::no_wifi);
 
     // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
     status = WiFi.begin(ssid, pass);
 
     // Display bouncing wifi animation, for 10 seconds
     for (int i = 0; i < 5; i++) {
-      matrix.loadFrame(wifi);
+      matrix.loadFrame(Icon::wifi);
       delay(500);
-      matrix.loadFrame(wifi1);
+      matrix.loadFrame(Icon::wifi1);
       delay(500);
-      matrix.loadFrame(wifi2);
+      matrix.loadFrame(Icon::wifi2);
       delay(500);
-      matrix.loadFrame(wifi3);
+      matrix.loadFrame(Icon::wifi3);
       delay(500);
     }
   }
 
   // Connected, good to go!
-  matrix.loadFrame(wifi_good);
+  matrix.loadFrame(Icon::wifi_good);
   printWifiStatus();
 }
 
