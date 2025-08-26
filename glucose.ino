@@ -32,7 +32,7 @@ String matrixText = "";
 // Server refetch
 bool connected = false;
 const unsigned long interval = 60000;
-const unsigned long timeout =   3000;
+const unsigned long timeout =   5000;
 unsigned long previousRequestTime = -1;
 
 /* -------------------------------------------------------------------------- */
@@ -96,13 +96,6 @@ void loop() {
       connected = false;
       client.stop();
     }
-  }
-
-  // Print what's on serial, for funsies
-  if (Serial.available()) {
-    String line = Serial.readStringUntil('\n'); // reads until newline or timeout
-    line.trim(); // removes \r and whitespace ends
-    matrixText = line;
   }
 
   // Display
@@ -170,24 +163,10 @@ void waitConnectWifi() {
 
   // Connected, good to go!
   matrix.loadFrame(Icon::wifi_good);
-  printWifiStatus();
-}
 
-/* -------------------------------------------------------------------------- */
-void printWifiStatus() {
-/* -------------------------------------------------------------------------- */
-  // print the SSID of the network you're attached to:
+  // Print connection info
   Serial.print("\nSSID: ");
   Serial.println(WiFi.SSID());
-
-  // print your board's IP address:
-  IPAddress ip = WiFi.localIP();
   Serial.print("IP Address: ");
-  Serial.println(ip);
-
-  // print the received signal strength:
-  long rssi = WiFi.RSSI();
-  Serial.print("signal strength (RSSI):");
-  Serial.print(rssi);
-  Serial.println(" dBm\n");
+  Serial.println(WiFi.localIP());
 }
