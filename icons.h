@@ -5,16 +5,6 @@
 
 namespace Icon {
 
-inline constexpr uint32_t no_wifi[3] = {
-    0xf430841,
-    0x20e01480,
-    0x80160260,
-};
-inline constexpr uint32_t wifi_good[3] = {
-    0xf030c40,
-    0x20f01080,
-    0x106a064,
-};
 inline constexpr uint32_t wifi[3] = {
     0xf030c40,
     0x20f01080,
@@ -34,6 +24,21 @@ inline constexpr uint32_t wifi3[3] = {
     0xf030,
     0xc4f21080,
     0x60060,
+};
+inline constexpr uint32_t noWifi[3] = {
+    0xf430841,
+    0x20e01480,
+    0x80160260,
+};
+inline constexpr uint32_t wifiGood[3] = {
+    0xf030c40,
+    0x20f01080,
+    0x106a064,
+};
+inline constexpr uint32_t wifiUpgrade[3] = {
+    0xf030c40,
+    0x20f410e0,
+    0x15064064,
 };
 
 }

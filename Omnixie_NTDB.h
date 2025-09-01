@@ -93,7 +93,7 @@ public:
 		uint8_t pin_HVenable,
 		uint8_t pin_colon, 
 		byte ntdb_count = 1 // qty of NTDB boards
-		);
+	);
 	
 	virtual ~Omnixie_NTDB();
 
