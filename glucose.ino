@@ -196,8 +196,13 @@ void getResponse() {
     auto lines = splitStringIntoLines(body);
   
     // Store
-    response = lines.at(0);
-    responseTime = lines.at(2);
+    if (lines.size() >= 2) {
+      response = lines.at(0);
+      responseTime = lines.at(2);
+    } else {
+      response = "No Data";
+      responseTime = "";
+    }
   }
 
   Serial.println(response);
