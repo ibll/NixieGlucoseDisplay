@@ -48,7 +48,7 @@ String matrixText = "";
 // Nixie driver
 
 #define NTDBcount  1
-#define tubeBitmask 0b0011
+#define tubeBitmask 0b0111
 // pin_DataIN, pin_STCP(latch), pin_SHCP(clock), pin_Blank(Output Enable; PWM pin preferred),
 // HVEnable pin, Colon pin, number of Nixie Tube Driver Boards
 // PWM Pins on Arduino Uno: 3, 5, 6, 9, 10, 11; PWM FREQUENCY 490 Hz (pins 5 and 6: 980 Hz)
@@ -56,6 +56,7 @@ Omnixie_NTDB nixieClock(11, 8, 12, 10, 6, 5, NTDBcount);
 
 // Periodic events
 
+unsigned long currentMillis;
 const unsigned long requestInterval = 60 * 1000;
 unsigned long previousRequestTime = -1;
 const unsigned long strobeInterval = 5 * 60 * 1000;
@@ -97,7 +98,7 @@ void setup() {
 /* -------------------------------------------------------------------------- */
 void loop() {
 /* -------------------------------------------------------------------------- */
-  unsigned long currentMillis = millis();
+  currentMillis = millis();
 
   // Cathode poisoning prevention
   if (previousStrobeTime == -1 || currentMillis - previousStrobeTime >= strobeInterval) {
@@ -111,43 +112,7 @@ void loop() {
     previousRequestTime = currentMillis;
   }
 
-  // Built-in display
-  matrix.beginDraw();
-  matrix.stroke(0xFFFFFFFF);
-  // matrix.textScrollSpeed(75);
-  // matrix.textFont(Font_5x7_Big_Zero);
-  matrix.textFont(Font_4x6);
-  matrix.beginText(0, 1, 0xFFFFFF);
-  // matrix.println("  " + matrixText);
-  matrix.println(matrixText);
-  // matrix.endText(SCROLL_LEFT);
-  matrix.endText();
-  matrix.endDraw();
-
-  int num = matrixText.toInt();
-
-  int h, t, o;
-  splitThreeDigit(num, h, t, o);
-
-  nixieClock.setBrightness(0xff);
-
-  nixieClock.setNumber(h, 0b0001);
-  nixieClock.display();
-  delay(750);
-  nixieClock.setNumber(h*10 + t, 0b0011);
-  nixieClock.display();
-  delay(750);
-  nixieClock.setNumber(t*10 + o, 0b0011);
-  nixieClock.display();
-  delay(750);
-  nixieClock.setNumber(o*10, 0b0010);
-  nixieClock.display();
-  delay(750);
-
-  nixieClock.setBrightness(0x40);
-  nixieClock.setNumber(0, 0b0000);
-  nixieClock.display();
-  delay(2750);
+  delay(1000); // Wait a second
 }
 
 /* -------------------------------------------------------------------------- */
@@ -187,15 +152,20 @@ void getResponse() {
 
     matrixText = body;
     nixieClock.setNumber(body.toInt(), tubeBitmask);
-
-    // if (body.toInt() == "No Data")
-    //   nixieClock.setNumber(0, tubeBitmask);
-    // else
-    //   nixieClock.setNumber(body.toInt(), tubeBitmask);
   }
 
   Serial.println(matrixText);
-  // nixieClock.display();
+
+  // Built-in display
+  matrix.beginDraw();
+  matrix.stroke(0xFFFFFFFF);
+  matrix.textFont(Font_4x6);
+  matrix.beginText(0, 1, 0xFFFFFF);
+  matrix.println(matrixText + "    ");
+  matrix.endText();
+  matrix.endDraw();
+
+  nixieClock.display();
 
   digitalWrite(LED_BUILTIN, LOW);
 }
@@ -207,6 +177,7 @@ void waitConnectWifi() {
   if (WiFi.status() == WL_CONNECTED) return;
   
   matrix.loadFrame(Icon::noWifi);
+  
   Serial.print("Attempting to connect to SSID: ");
   Serial.println(_SSID);
 
@@ -215,7 +186,6 @@ void waitConnectWifi() {
   
   // Display bouncing wifi animation until connected
   while (WiFi.status() != WL_CONNECTED || WiFi.localIP() == NO_IP) {
-    // for (int i = 0; i < 5; i++) {
     matrix.loadFrame(Icon::wifi);
     delay(500);
     matrix.loadFrame(Icon::wifi1);
@@ -224,7 +194,17 @@ void waitConnectWifi() {
     delay(500);
     matrix.loadFrame(Icon::wifi3);
     delay(500);
-    // }
+
+    // Cathode poisoning prevention, if it takes a long time to reconnect to wifi
+    currentMillis = millis();
+
+    if (previousStrobeTime == -1 || currentMillis - previousStrobeTime >= strobeInterval) {
+      CathodePoisoningPrevention(3, 100);
+      previousStrobeTime = currentMillis;
+
+      nixieClock.setNumber(0, tubeBitmask);
+      nixieClock.display();
+    }
   }
 
   // Connected, good to go!
@@ -254,8 +234,8 @@ void CathodePoisoningPrevention(unsigned int num, int msDelay) {
 
       matrix.beginDraw();
       matrix.stroke(0xFFFFFFFF);
-      matrix.textFont(Font_5x7_Big_Zero);
-      matrix.beginText(1, 1, 0xFFFFFF);
+      matrix.textFont(Font_4x6);
+      matrix.beginText(0, 1, 0xFFFFFF);
       matrix.println(String(i * 111) + "  ");
       matrix.endText();
       matrix.endDraw();
@@ -263,12 +243,4 @@ void CathodePoisoningPrevention(unsigned int num, int msDelay) {
       delay(msDelay);
     }
   }
-}
-
-/* -------------------------------------------------------------------------- */
-void splitThreeDigit(int n, int &hundreds, int &tens, int &ones) {
-/* -------------------------------------------------------------------------- */
-  ones = n % 10;
-  tens = (n / 10) % 10;
-  hundreds = n / 100;
 }
