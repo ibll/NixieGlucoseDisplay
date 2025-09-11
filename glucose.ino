@@ -17,12 +17,12 @@
 */
 
 #include <R4HttpClient.h>
+#include <vector>
 
 #include "ArduinoGraphics.h"
 #include "Arduino_LED_Matrix.h"
 
 #include "arduino_secrets.h"
-#include "Font_5x7_Custom.h"
 #include "icons.h"
 #include "Omnixie_NTDB.h"
 
@@ -40,10 +40,13 @@ WiFiSSLClient client;
 R4HttpClient  http;
 IPAddress NO_IP(0,0,0,0);
 
-// Built-in LED output
+// Network response
+String response = "";
+String responseTime = "";
 
+// Prepare outputs
 ArduinoLEDMatrix matrix;
-String matrixText = "";
+int output = -1;
 
 // Nixie driver
 
@@ -59,8 +62,9 @@ Omnixie_NTDB nixieClock(11, 8, 12, 10, 6, 5, NTDBcount);
 unsigned long currentMillis;
 const unsigned long requestInterval = 60 * 1000;
 unsigned long previousRequestTime = -1;
-const unsigned long strobeInterval = 5 * 60 * 1000;
+const unsigned long strobeInterval = 6 * 60 * 1000; // New blood sugar every 5 minutes, we should wait at least 6 for a new reading
 unsigned long previousStrobeTime = -1;
+
 
 /* -------------------------------------------------------------------------- */
 void setup() {
@@ -92,28 +96,76 @@ void setup() {
 
   nixieClock.setHVPower(true);
   nixieClock.setBrightness(0xff);
+  nixieClock.setNumber(0, 0b0000);
   nixieClock.display();
 }
+
 
 /* -------------------------------------------------------------------------- */
 void loop() {
 /* -------------------------------------------------------------------------- */
   currentMillis = millis();
 
-  // Cathode poisoning prevention
-  if (previousStrobeTime == -1 || currentMillis - previousStrobeTime >= strobeInterval) {
-    CathodePoisoningPrevention(3, 100);
-    previousStrobeTime = currentMillis;
-  }
-
   // Recheck glucose
   if (previousRequestTime == -1 || currentMillis - previousRequestTime >= requestInterval) {
+    int previousOutput = output;
+    String previousResponseTime = responseTime;
+    
     getResponse();
     previousRequestTime = currentMillis;
+
+    matrix.beginDraw();
+    matrix.stroke(0xFFFFFFFF);
+    matrix.textFont(Font_4x6);
+    matrix.beginText(0, 1, 0xFFFFFF);
+    matrix.println(response + "    ");
+    matrix.endText();
+    matrix.endDraw();
+
+    output = response.toInt();
+
+    // Animate transition
+    if (previousOutput != output || previousResponseTime != responseTime) {
+      animateSlotMachine(previousOutput, output);
+      previousStrobeTime = currentMillis;
+    }
+  }
+
+  // Fallback poisoning prevention
+  if (previousStrobeTime == -1 || currentMillis - previousStrobeTime >= strobeInterval) {
+    animateSlotMachine(output, output);
+    previousStrobeTime = currentMillis;
   }
 
   delay(1000); // Wait a second
 }
+
+
+/* -------------------------------------------------------------------------- */
+std::vector<String> splitStringIntoLines(String &input) {
+/* -------------------------------------------------------------------------- */
+    std::vector<String> out;
+    int len = input.length();
+    int start = 0;
+    while (start < len) {
+        int nextN = input.indexOf('\n', start);
+        int nextR = input.indexOf('\r', start);
+        int end;
+        if (nextN == -1 && nextR == -1) end = len;
+        else if (nextN == -1) end = nextR;
+        else if (nextR == -1) end = nextN;
+        else end = min(nextN, nextR);
+
+        String line = input.substring(start, end);
+        out.push_back(line);
+
+        start = end;
+        // skip consecutive newline characters (\r\n or \n\r)
+        while (start < len && (input.charAt(start) == '\n' || input.charAt(start) == '\r')) start++;
+    }
+    return out;
+}
+
 
 /* -------------------------------------------------------------------------- */
 void getResponse() {
@@ -132,47 +184,29 @@ void getResponse() {
 
   if (statusCode <= 0) {
     // Library error
-    // matrixText = "Fetch Err: " + String(statusCode);
-    matrixText = "F" + String(statusCode);
+    response = "F" + String(statusCode);
   } else if (statusCode != HTTP_CODE_OK) {
     // Server error
-    // matrixText = "Server Err: " + String(statusCode);
-    matrixText = "E" + String(statusCode);
+    response = "E" + String(statusCode);
   } else {
     // All good
     String body = http.getBody();
     body.trim();
 
-    // Only get first line, the current value in mg/dL or No Data
-    const int newlineIndex = body.indexOf('\n');
-    if (newlineIndex != -1)
-      body = body.substring(0, newlineIndex);
+    auto lines = splitStringIntoLines(body);
   
-    // Display
-
-    matrixText = body;
-    nixieClock.setNumber(body.toInt(), tubeBitmask);
+    // Store
+    response = lines.at(0);
+    responseTime = lines.at(2);
   }
 
-  Serial.println(matrixText);
-
-  // Built-in display
-  matrix.beginDraw();
-  matrix.stroke(0xFFFFFFFF);
-  matrix.textFont(Font_4x6);
-  matrix.beginText(0, 1, 0xFFFFFF);
-  matrix.println(matrixText + "    ");
-  matrix.endText();
-  matrix.endDraw();
-
-  nixieClock.display();
-
+  Serial.println(response);
   digitalWrite(LED_BUILTIN, LOW);
 }
 
+
 /* -------------------------------------------------------------------------- */
 void waitConnectWifi() {
-// Need to add cahtode slot machine to this 
 /* -------------------------------------------------------------------------- */
   if (WiFi.status() == WL_CONNECTED) return;
   
@@ -198,12 +232,9 @@ void waitConnectWifi() {
     // Cathode poisoning prevention, if it takes a long time to reconnect to wifi
     currentMillis = millis();
 
-    if (previousStrobeTime == -1 || currentMillis - previousStrobeTime >= strobeInterval) {
-      CathodePoisoningPrevention(3, 100);
+    if (currentMillis - previousStrobeTime >= strobeInterval) {
+      animateSlotMachine(output, 000);
       previousStrobeTime = currentMillis;
-
-      nixieClock.setNumber(0, tubeBitmask);
-      nixieClock.display();
     }
   }
 
@@ -219,28 +250,61 @@ void waitConnectWifi() {
   Serial.println(WiFi.localIP());
 }
 
+
 /* -------------------------------------------------------------------------- */
-void CathodePoisoningPrevention(unsigned int num, int msDelay) {
+static inline void showFrame(uint8_t left, uint8_t mid, uint8_t right, uint8_t mask = 0b0111) {
 /* -------------------------------------------------------------------------- */
-  if (num < 1) exit;
+  mask &= tubeBitmask; // crop to # of digits
+  nixieClock.setNumber(join3(left, mid, right), mask);
+  nixieClock.display();
+  delay(100);
+}
 
-  Serial.println("Running Cathode Poisoning Prevention... ");
-  nixieClock.setBrightness(0xff);
 
-  for (byte n = 0; n < num; n++) {
-    for (byte i = 0; i < 10; i++) {
-      nixieClock.setNumber(i * 1111, tubeBitmask);
-      nixieClock.display();
+/* -------------------------------------------------------------------------- */
+static void animateSlotMachine(int from, int to) {
+/* -------------------------------------------------------------------------- */
 
-      matrix.beginDraw();
-      matrix.stroke(0xFFFFFFFF);
-      matrix.textFont(Font_4x6);
-      matrix.beginText(0, 1, 0xFFFFFF);
-      matrix.println(String(i * 111) + "  ");
-      matrix.endText();
-      matrix.endDraw();
+  uint8_t fd[3] = {0, 0, 0};
+  uint8_t td[3] = {0, 0, 0};
+  if (from >= 0) split3(from, fd);
+  split3(to, td);
 
-      delay(msDelay);
-    }
+  Serial.println("Animating from " + String(from) + " to " + String(to) + "...");
+
+  // Animate in
+  for (uint8_t i = 0; i < 10; ++i) {
+    if (from >= 0) showFrame(fd[0], fd[1], i);
+    else showFrame(0, 0, i, 0b0001);
   }
+  for (uint8_t i = 0; i < 10; ++i) {
+    if (from >= 0) showFrame(fd[0], i, i);
+    else showFrame(0, i, i, 0b0011);
+  }
+
+  // All cycling
+  for (uint8_t i = 0; i < 10; ++i) showFrame(i, i, i);
+
+  // Animate out
+  for (uint8_t i = 0; i < 10; ++i) showFrame(i, i, td[2]);
+  for (uint8_t i = 0; i < 10; ++i) showFrame(i, td[1], td[2]);
+  
+  // Finish
+  showFrame(td[0], td[1], td[2]);
+}
+
+
+/* -------------------------------------------------------------------------- */
+static inline void split3(int v, uint8_t d[3]) {
+/* -------------------------------------------------------------------------- */
+    d[0] = (v / 100) % 10; // hundreds
+    d[1] = (v / 10) % 10;  // tens
+    d[2] = v % 10;         // ones
+}
+
+
+/* -------------------------------------------------------------------------- */
+static inline int join3(int leftHundreds, int midTens, int rightOnes) {
+/* -------------------------------------------------------------------------- */
+    return leftHundreds * 100 + midTens * 10 + rightOnes;
 }
