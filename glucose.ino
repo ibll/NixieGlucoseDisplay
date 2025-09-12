@@ -140,6 +140,7 @@ void loop() {
 }
 
 
+// Populates response and responseTime
 /* -------------------------------------------------------------------------- */
 void getResponse() {
 /* -------------------------------------------------------------------------- */
@@ -167,8 +168,8 @@ void getResponse() {
     body.trim();
 
     // Parse lines
-    String response = "";
-    String responseTime = "";
+    response = "";
+    responseTime = "";
 
     int start = 0;
     int lineNo = 0;
