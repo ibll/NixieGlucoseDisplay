@@ -32,8 +32,8 @@
 char _SSID[] = SECRET_SSID;
 char _PASS[] = SECRET_PASS;
 
-char serverAddress[] = "https://example.com/";
-int  serverPort      = 443;
+char serverAddress[] = SECRET_ADDRESS;
+int  serverPort      = SECRET_PORT;
 
 WiFiSSLClient client;
 R4HttpClient  http;
