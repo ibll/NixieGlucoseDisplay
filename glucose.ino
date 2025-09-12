@@ -17,7 +17,6 @@
 */
 
 #include <R4HttpClient.h>
-#include <vector>
 
 #include "ArduinoGraphics.h"
 #include "Arduino_LED_Matrix.h"
@@ -142,32 +141,6 @@ void loop() {
 
 
 /* -------------------------------------------------------------------------- */
-std::vector<String> splitStringIntoLines(String &input) {
-/* -------------------------------------------------------------------------- */
-    std::vector<String> out;
-    int len = input.length();
-    int start = 0;
-    while (start < len) {
-        int nextN = input.indexOf('\n', start);
-        int nextR = input.indexOf('\r', start);
-        int end;
-        if (nextN == -1 && nextR == -1) end = len;
-        else if (nextN == -1) end = nextR;
-        else if (nextR == -1) end = nextN;
-        else end = min(nextN, nextR);
-
-        String line = input.substring(start, end);
-        out.push_back(line);
-
-        start = end;
-        // skip consecutive newline characters (\r\n or \n\r)
-        while (start < len && (input.charAt(start) == '\n' || input.charAt(start) == '\r')) start++;
-    }
-    return out;
-}
-
-
-/* -------------------------------------------------------------------------- */
 void getResponse() {
 /* -------------------------------------------------------------------------- */
   waitConnectWifi();
@@ -193,15 +166,40 @@ void getResponse() {
     String body = http.getBody();
     body.trim();
 
-    auto lines = splitStringIntoLines(body);
-  
-    // Store
-    if (lines.size() >= 2) {
-      response = lines.at(0);
-      responseTime = lines.at(2);
-    } else {
-      response = "No Data";
-      responseTime = "";
+    // Parse lines
+    String response = "";
+    String responseTime = "";
+
+    int start = 0;
+    int lineNo = 0;
+    while (start <= body.length()) {
+      String line;
+      int idx = body.indexOf('\n', start);
+      if (idx == -1) { // last segment (no trailing newline)
+        if (start < body.length()) {
+          line = body.substring(start);
+          line.trim();
+        }
+      } else {
+        line = body.substring(start, idx);
+        line.trim();
+      }
+      
+      switch (lineNo) {
+        case 0: // Blood glucose
+          response = line;
+          break;
+        case 1: // Trend description
+          break;
+        case 2: // Time
+          responseTime = line;
+          break;
+      }
+
+      if (idx == -1) break;
+
+      start = idx + 1;
+      lineNo++;
     }
   }
 
