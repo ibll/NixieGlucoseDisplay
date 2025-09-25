@@ -50,12 +50,19 @@ Connect the 12V DC power to the NTDB board.
 #define SECRET_PORT 5000                       // Port where Python server runs
 ```
 
+**Tip**: You can copy and modify `arduino/arduino_secrets.h.template` as a starting point.
+
 4. Upload `arduino/glucose.ino` to your Arduino UNO R4 WiFi
 
 ### 3. Python Server Setup
 
 1. Install Python 3.7+ and pip
 2. Install required Python packages:
+```bash
+pip install -r requirements.txt
+```
+
+Or manually install:
 ```bash
 pip install flask pydexcom
 ```

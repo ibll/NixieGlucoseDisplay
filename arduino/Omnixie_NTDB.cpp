@@ -85,7 +85,7 @@ Omnixie_NTDB::Omnixie_NTDB(uint8_t pin_DataIN,
 		_ntdb_count(ntdb_count)
 {
 	_cache_length_bytes = ntdb_count * 5;
-	_data = (byte *) malloc(sizeof(byte) * ntdb_count); 
+	_data = (byte *) malloc(sizeof(byte) * _cache_length_bytes);  // Fix: allocate correct amount of memory 
 
 	pinMode(_pin_DataIN, OUTPUT);
 	pinMode(_pin_LatchSTCP, OUTPUT);
