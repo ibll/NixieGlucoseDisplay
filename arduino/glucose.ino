@@ -47,10 +47,19 @@ String responseTime = "";
 ArduinoLEDMatrix matrix;
 int output = -1;
 
-// Nixie driver
-
+// Constants for timing and configuration
 #define NTDBcount  1
 #define tubeBitmask 0b0111
+
+// Timing constants
+const unsigned long REQUEST_INTERVAL_MS = 60 * 1000;            // 60 seconds
+const unsigned long STROBE_INTERVAL_MS = 6 * 60 * 1000;        // 6 minutes
+const unsigned long FRAME_DISPLAY_MS = 100;                     // 100ms per frame
+const unsigned long WIFI_RETRY_DELAY_MS = 500;                  // 500ms between wifi attempts
+const unsigned long SETUP_DELAY_MS = 1000;                      // 1 second delays in setup
+const unsigned long MAIN_LOOP_DELAY_MS = 1000;                  // 1 second main loop delay
+const int HTTP_TIMEOUT_MS = 3000;                               // HTTP request timeout
+
 // pin_DataIN, pin_STCP(latch), pin_SHCP(clock), pin_Blank(Output Enable; PWM pin preferred),
 // HVEnable pin, Colon pin, number of Nixie Tube Driver Boards
 // PWM Pins on Arduino Uno: 3, 5, 6, 9, 10, 11; PWM FREQUENCY 490 Hz (pins 5 and 6: 980 Hz)
@@ -59,9 +68,9 @@ Omnixie_NTDB nixieClock(11, 8, 12, 10, 6, 5, NTDBcount);
 // Periodic events
 
 unsigned long currentMillis;
-const unsigned long requestInterval = 60 * 1000;
+const unsigned long requestInterval = REQUEST_INTERVAL_MS;
 unsigned long previousRequestTime = -1;
-const unsigned long strobeInterval = 6 * 60 * 1000; // New blood sugar every 5 minutes, we should wait at least 6 for a new reading
+const unsigned long strobeInterval = STROBE_INTERVAL_MS; // New blood sugar every 5 minutes, we should wait at least 6 for a new reading
 unsigned long previousStrobeTime = -1;
 
 
@@ -85,9 +94,9 @@ void setup() {
     Serial.println("Please upgrade the firmware");
     for (int i = 0; i < 5; i++) {
       matrix.loadFrame(Icon::wifiUpgrade);
-      delay(500);
+      delay(WIFI_RETRY_DELAY_MS);
       matrix.loadFrame(Icon::wifi);
-      delay(500);
+      delay(WIFI_RETRY_DELAY_MS);
     }
   }
 
@@ -121,7 +130,14 @@ void loop() {
     matrix.endText();
     matrix.endDraw();
 
-    output = response.toInt();
+    // Only update output if we have a valid numeric response
+    int newOutput = response.toInt();
+    if (response.length() > 0 && (newOutput > 0 || response == "0")) {
+      output = newOutput;
+    } else {
+      Serial.println("Invalid response received: " + response);
+      // Keep previous output value
+    }
 
     // Animate transition
     if (previousOutput != output || previousResponseTime != responseTime) {
@@ -136,7 +152,7 @@ void loop() {
     previousStrobeTime = currentMillis;
   }
 
-  delay(1000); // Wait a second
+  delay(MAIN_LOOP_DELAY_MS); // Wait a second
 }
 
 
@@ -151,7 +167,7 @@ void getResponse() {
 
   // Make request
   http.begin(client, serverAddress, serverPort);
-  http.setTimeout(3000);
+  http.setTimeout(HTTP_TIMEOUT_MS);
   http.addHeader("User-Agent: Arduino UNO R4 Wifi");
   // http.addHeader("Connection: close");
   int statusCode = http.GET();
@@ -166,6 +182,13 @@ void getResponse() {
     // All good
     String body = http.getBody();
     body.trim();
+
+    if (body.length() == 0) {
+      response = "Empty";
+      Serial.println(response);
+      digitalWrite(LED_BUILTIN, LOW);
+      return;
+    }
 
     // Parse lines
     response = "";
@@ -190,10 +213,13 @@ void getResponse() {
         case 0: // Blood glucose
           response = line;
           break;
-        case 1: // Trend description
+        case 1: // Trend description (currently unused)
           break;
         case 2: // Time
           responseTime = line;
+          break;
+        default:
+          // Ignore additional lines
           break;
       }
 
@@ -201,6 +227,12 @@ void getResponse() {
 
       start = idx + 1;
       lineNo++;
+    }
+    
+    // Validate glucose reading
+    int glucoseValue = response.toInt();
+    if (glucoseValue < 0 || glucoseValue > 600) {  // Reasonable glucose range
+      Serial.println("Warning: Glucose value out of expected range: " + String(glucoseValue));
     }
   }
 
@@ -225,13 +257,13 @@ void waitConnectWifi() {
   // Display bouncing wifi animation until connected
   while (WiFi.status() != WL_CONNECTED || WiFi.localIP() == NO_IP) {
     matrix.loadFrame(Icon::wifi);
-    delay(500);
+    delay(WIFI_RETRY_DELAY_MS);
     matrix.loadFrame(Icon::wifi1);
-    delay(500);
+    delay(WIFI_RETRY_DELAY_MS);
     matrix.loadFrame(Icon::wifi2);
-    delay(500);
+    delay(WIFI_RETRY_DELAY_MS);
     matrix.loadFrame(Icon::wifi3);
-    delay(500);
+    delay(WIFI_RETRY_DELAY_MS);
 
     // Cathode poisoning prevention, if it takes a long time to reconnect to wifi
     currentMillis = millis();
@@ -245,7 +277,7 @@ void waitConnectWifi() {
   // Connected, good to go!
   matrix.loadFrame(Icon::wifiGood);
 
-  delay(1000);
+  delay(SETUP_DELAY_MS);
 
   // Print connection info
   Serial.print("\tSSID: ");
@@ -261,13 +293,18 @@ static inline void showFrame(uint8_t left, uint8_t mid, uint8_t right, uint8_t m
   mask &= tubeBitmask; // crop to # of digits
   nixieClock.setNumber(join3(left, mid, right), mask);
   nixieClock.display();
-  delay(100);
+  delay(FRAME_DISPLAY_MS);
 }
 
 
 /* -------------------------------------------------------------------------- */
 static void animateSlotMachine(int from, int to) {
 /* -------------------------------------------------------------------------- */
+  // Input validation - clamp values to valid range
+  if (to < 0) to = 0;
+  if (to > 999) to = 999;
+  if (from < -1) from = -1;  // Allow -1 for initial state
+  if (from > 999) from = 999;
 
   uint8_t fd[3] = {0, 0, 0};
   uint8_t td[3] = {0, 0, 0};
