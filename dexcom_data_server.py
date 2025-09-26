@@ -4,7 +4,6 @@ import time
 
 app = Flask(__name__)
 dexcom = Dexcom(username="", password="")
-
 saved_time = 0
 
 
