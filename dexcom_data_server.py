@@ -5,13 +5,15 @@ import time
 app = Flask(__name__)
 dexcom = Dexcom(username="", password="")
 saved_time = 0
+glucode_reading = None
 
 
 @app.route("/")
 def return_data():
     global saved_time
+    global glucose_reading
+
     seconds_elapsed = time.time() - saved_time
-    glucose_reading = None
 
     if seconds_elapsed > 58:
         saved_time = time.time()
