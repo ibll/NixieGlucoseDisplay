@@ -1,0 +1,2 @@
+flask>=2.0.0
+pydexcom>=0.2.0
