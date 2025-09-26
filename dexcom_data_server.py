@@ -10,13 +10,16 @@ saved_time = 0
 
 @app.route("/")
 def return_data():
+    global saved_time
     seconds_elapsed = time.time() - saved_time
+    glucose_reading = None
 
     if seconds_elapsed > 58:
+        saved_time = time.time()
         try:
             glucose_reading = dexcom.get_current_glucose_reading()
         except Exception:
-            glucose_reading = None
+            pass
 
     # Use getattr as optional chaining: returns None if glucose_reading is None or attr missing
     value = getattr(glucose_reading, "value", None)
