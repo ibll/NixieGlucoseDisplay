@@ -59,7 +59,7 @@ steady
 - [12V 1A DC Power Adapter – Omnixie](https://omnixie.com/products/12v-1a-dc-power-adapter-fc-ul-listed-dc5-5-2-1)
 - 3x 9.1kΩ resistors
 - 33x 1mm Nixie tube pins
-- Handful Male to female jumper wires
+- Handful male to female jumper wires
 - Some normal wire
 - A case of some kind
 
@@ -71,8 +71,6 @@ steady
 - Solder the resistors to the driver board
 - Connect the driver board to your tubes with the pins
 - Connect the driver board to the Arduino with the jumper wires:
-- Set the DC booster to 170V (use a multimeter)
-- Use normal wire to connect the driver board to the DC booster
 
 ```plaintext
   NTDB        Arduino Pins
@@ -85,6 +83,8 @@ steady
   ON/OFF      6 (HVEnable)
 ```
 
+- Set the DC booster to 170V (use a multimeter)
+- Use normal wire to connect the driver board to the DC booster
 - Power the driver board directly with its barrel jack
 - You can power the Arduino from the driver board with the vin header, or directly via USB, barrel jack, etc.
 - When everything is connected, the tubes should display your blood sugar and fetch your new readings automatically
