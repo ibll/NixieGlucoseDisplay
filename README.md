@@ -8,7 +8,13 @@ Custom Nixie tube display that displays real-time blood sugar data from a contin
 
 ## Server Setup
 
-On your server, ensure `python` is installed and has `pip`. To install the project dependencies, run:
+Start by going to the server directory:
+
+```bash
+cd /path/to/data-server/
+```
+
+Ensure `python` is installed and has `pip`. To install the project dependencies, run:
 
 ```bash
 pip install -r requirements.txt
@@ -60,7 +66,7 @@ steady
 - 3x 9.1kΩ resistors
 - 33x 1mm Nixie tube pins
 - Handful male to female jumper wires
-- Some normal wire
+- Some normal breadboarding wire
 - A case of some kind
 
 ### Setup
