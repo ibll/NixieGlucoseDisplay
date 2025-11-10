@@ -25,6 +25,7 @@ def return_data():
     # Use getattr as optional chaining: returns None if glucose_reading is None or attr missing
     value = getattr(glucose_reading, "value", None)
     trend = getattr(glucose_reading, "trend_description", None)
+    arrow = getattr(glucose_reading, "trend_arrow", None)
     timestamp = getattr(glucose_reading, "datetime", None)
 
     if value is None and trend is None and timestamp is None:
@@ -34,7 +35,7 @@ def return_data():
     # Build response lines; replace missing fields with an empty string or a placeholder
     lines = [
         str(value) if value is not None else "",
-        str(trend) if trend is not None else "",
+        str(trend) + " " + str(arrow) if trend is not None else "",
         str(timestamp) if timestamp is not None else "",
     ]
     body = "\n".join(lines)
