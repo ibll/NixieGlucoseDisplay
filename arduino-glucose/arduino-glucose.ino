@@ -198,6 +198,9 @@ static void parsePayload(const char *body, char *glucose, char *timestamp) {
 
     // If no newline character found, end of body is end of line
     int lineEnd = (newlineIndex == -1) ? bodyLen : newlineIndex;
+    // Trim \r if it's before the \n
+    if (lineEnd > lineStart && body[lineEnd - 1] == '\r') lineEnd--;
+
     int lineLen = lineEnd - lineStart;
 
     // Extract glucose value
