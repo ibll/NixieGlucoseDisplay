@@ -16,7 +16,8 @@
   Connect the 12V DC power to the NTDB board 
 */
 
-#include <R4HttpClient.h>
+#include <WiFiS3.h>
+#include <ArduinoHttpClient.h>
 
 #include "ArduinoGraphics.h"
 #include "Arduino_LED_Matrix.h"
@@ -36,7 +37,7 @@ char serverAddress[] = SECRET_ADDRESS;
 int  serverPort      = SECRET_PORT;
 
 WiFiSSLClient client;
-R4HttpClient  http;
+HttpClient  http(client, serverAddress, serverPort);
 IPAddress NO_IP(0,0,0,0);
 
 // Network response
@@ -68,19 +69,21 @@ unsigned long previousStrobeTime = 0;
 const unsigned long wifiRetryInterval = 12000;
 unsigned long previousWifiRetry = 0;
 
+bool useMatrix = false;
+
 
 /* -------------------------------------------------------------------------- */
 void setup() {
 /* -------------------------------------------------------------------------- */
   Serial.begin(115200);
-  matrix.begin();
+  if (useMatrix) matrix.begin();
   pinMode(LED_BUILTIN, OUTPUT);
 
   Serial.println("\n\nHello at 115200 baud!");
 
   if (WiFi.status() == WL_NO_MODULE) {
     Serial.println("Communication with WiFi module failed!");
-    matrix.loadFrame(Icon::noWifi);
+    if (useMatrix) matrix.loadFrame(Icon::noWifi);
     while (true);
   }
 
@@ -88,9 +91,9 @@ void setup() {
   if (fv < WIFI_FIRMWARE_LATEST_VERSION) {
     Serial.println("Please upgrade the firmware");
     for (int i = 0; i < 5; i++) {
-      matrix.loadFrame(Icon::wifiUpgrade);
+      if (useMatrix) matrix.loadFrame(Icon::wifiUpgrade);
       delay(500);
-      matrix.loadFrame(Icon::wifi);
+      if (useMatrix) matrix.loadFrame(Icon::wifi);
       delay(500);
     }
   }
@@ -115,15 +118,19 @@ void loop() {
     String previousResponseTime = responseTime;
 
     getResponse();
+
+    currentMillis = millis();
     previousRequestTime = currentMillis;
 
-    matrix.beginDraw();
-    matrix.stroke(0xFFFFFFFF);
-    matrix.textFont(Font_4x6);
-    matrix.beginText(0, 1, 0xFFFFFF);
-    matrix.println(response + "    ");
-    matrix.endText();
-    matrix.endDraw();
+    if (useMatrix) {
+      matrix.beginDraw();
+      matrix.stroke(0xFFFFFFFF);
+      matrix.textFont(Font_4x6);
+      matrix.beginText(0, 1, 0xFFFFFF);
+      matrix.println(response + "    ");
+      matrix.endText();
+      matrix.endDraw();
+    }
 
     output = response.toInt();
 
@@ -144,95 +151,122 @@ void loop() {
 }
 
 
+// Read the http body
+/* -------------------------------------------------------------------------- */
+static void parsePayload(const String &body, String &glucose, String &timestamp) {
+/* -------------------------------------------------------------------------- */
+  glucose = "";
+  timestamp = "";
+
+  int start = 0;
+  int lineNo = 0;
+
+  if (body.length() == 0) return;
+
+  while (start <= body.length()) {
+    int idx = body.indexOf('\n', start);
+    String line;
+
+    if (idx == -1) { // last segment (no trailing newline)
+      if (start < body.length()) {
+        line = body.substring(start);
+        line.trim();
+      } else {
+        break;
+      }
+    } else {
+      line = body.substring(start, idx);
+      line.trim();
+    }
+
+    if (lineNo == 0) glucose = line;
+    if (lineNo == 2) timestamp = line;
+
+    if (idx == -1) break;
+    start = idx + 1;
+    lineNo++;
+  }
+}
+
+
 // Populates response and responseTime
 /* -------------------------------------------------------------------------- */
 void getResponse() {
 /* -------------------------------------------------------------------------- */
   waitConnectWifi();
 
-  Serial.print("Getting... ");
   digitalWrite(LED_BUILTIN, HIGH);
+  Serial.print("Getting... ");
+
+  response = "";
+  responseTime = "";
 
   // Make request
-  http.begin(client, serverAddress, serverPort);
-  http.setTimeout(10000);
-  http.addHeader("User-Agent", "Arduino UNO R4 Wifi");
-  http.addHeader("Connection", "close");
+  http.setHttpResponseTimeout(10000);
 
-  int statusCode = http.GET("/");
+  do {
+    int reqErr = http.get("/");
+    if (reqErr != 0) {
+      response = "A" + String(reqErr);
+      Serial.print("Request Error: "); Serial.println(reqErr);
+      break;
+    }
 
-  if (statusCode <= 0) {
-    // Library error
-    response = "F" + String(statusCode);
-  } else if (statusCode != HTTP_CODE_OK) {
-    // Server error
-    response = "E" + String(statusCode);
-  } else {
-    // All good
-    String body = http.getBody();
+    int statusCode = http.responseStatusCode();
+    if (statusCode < 0) {
+      response = "B" + String(statusCode);
+      Serial.print("Response Error: "); Serial.println(statusCode);
+      break;
+    }
+
+    if (statusCode != 200) {
+      response = "C" + String(statusCode);
+      Serial.print("HTTP Error: "); Serial.println(statusCode);
+      break;
+    }
+
+    String body = http.responseBody();
     body.trim();
 
-    // Parse lines
-    response = "";
-    responseTime = "";
-
-    int start = 0;
-    int lineNo = 0;
-    if (body.length() != 0) {
-      while (start <= body.length()) {
-        String line;
-        int idx = body.indexOf('\n', start);
-        if (idx == -1) { // last segment (no trailing newline)
-          if (start < body.length()) {
-            line = body.substring(start);
-            line.trim();
-          }
-        } else {
-          line = body.substring(start, idx);
-          line.trim();
-        }
-
-        switch (lineNo) {
-          case 0: // Blood glucose
-            response = line;
-            break;
-          case 1: // Trend description
-            break;
-          case 2: // Time
-            responseTime = line;
-            break;
-        }
-
-        if (idx == -1) break;
-
-        start = idx + 1;
-        lineNo++;
-      }
+    if (body.length() == 0) {
+      response = "MTY";
+      break;
     }
-  }
+
+    parsePayload(body, response, responseTime);
+
+    if (response.length() == 0) {
+      response = "BAD";
+    }
+
+  } while (false);
 
   http.stop();
-
-  Serial.println(response);
   digitalWrite(LED_BUILTIN, LOW);
+
+  if (responseTime.length() > 0) {
+    Serial.println(response + " @" + responseTime);
+  } else {
+    Serial.println(response);
+  }
 }
 
 
 /* -------------------------------------------------------------------------- */
 void waitConnectWifi() {
 /* -------------------------------------------------------------------------- */
-  if (WiFi.status() == WL_CONNECTED) return;
+  if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != NO_IP) return;
 
-  matrix.loadFrame(Icon::noWifi);
+  if (useMatrix) matrix.loadFrame(Icon::noWifi);
 
   Serial.print("Attempting to connect to SSID: ");
   Serial.println(_SSID);
 
   previousWifiRetry = 0;
- 
+
   // Display bouncing wifi animation until connected
   while (WiFi.status() != WL_CONNECTED || WiFi.localIP() == NO_IP) {
-    unsigned long currentMillis = millis();
+    currentMillis = millis();
 
     if (previousWifiRetry == 0 || (currentMillis - previousWifiRetry >= wifiRetryInterval)) {
       // Attempt to connect to WiFi network:
@@ -240,14 +274,18 @@ void waitConnectWifi() {
       previousWifiRetry = currentMillis;
     }
 
-    matrix.loadFrame(Icon::wifi);
-    delay(500);
-    matrix.loadFrame(Icon::wifi1);
-    delay(500);
-    matrix.loadFrame(Icon::wifi2);
-    delay(500);
-    matrix.loadFrame(Icon::wifi3);
-    delay(500);
+    if (useMatrix) {
+      matrix.loadFrame(Icon::wifi);
+      delay(500);
+      matrix.loadFrame(Icon::wifi1);
+      delay(500);
+      matrix.loadFrame(Icon::wifi2);
+      delay(500);
+      matrix.loadFrame(Icon::wifi3);
+      delay(500);
+    } else {
+      delay(2000);
+    }
 
     // Cathode poisoning prevention, if it takes a long time to reconnect to wifi
     if (currentMillis - previousStrobeTime >= strobeInterval) {
@@ -257,7 +295,7 @@ void waitConnectWifi() {
   }
 
   // Connected, good to go!
-  matrix.loadFrame(Icon::wifiGood);
+  if (useMatrix) matrix.loadFrame(Icon::wifiGood);
 
   delay(1000);
 
@@ -306,7 +344,7 @@ static void animateSlotMachine(int from, int to) {
   // Animate out
   for (uint8_t i = 0; i < 10; ++i) showFrame(i, i, td[2]);
   for (uint8_t i = 0; i < 10; ++i) showFrame(i, td[1], td[2]);
-  
+
   // Finish
   showFrame(td[0], td[1], td[2]);
 }
@@ -315,14 +353,14 @@ static void animateSlotMachine(int from, int to) {
 /* -------------------------------------------------------------------------- */
 static inline void split3(int v, uint8_t d[3]) {
 /* -------------------------------------------------------------------------- */
-    d[0] = (v / 100) % 10; // hundreds
-    d[1] = (v / 10) % 10;  // tens
-    d[2] = v % 10;         // ones
+  d[0] = (v / 100) % 10; // hundreds
+  d[1] = (v / 10) % 10;  // tens
+  d[2] = v % 10;         // ones
 }
 
 
 /* -------------------------------------------------------------------------- */
 static inline int join3(int leftHundreds, int midTens, int rightOnes) {
 /* -------------------------------------------------------------------------- */
-    return leftHundreds * 100 + midTens * 10 + rightOnes;
+  return leftHundreds * 100 + midTens * 10 + rightOnes;
 }
