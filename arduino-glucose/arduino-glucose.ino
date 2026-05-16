@@ -118,6 +118,8 @@ void loop() {
     String previousResponseTime = responseTime;
 
     getResponse();
+
+    currentMillis = millis();
     previousRequestTime = currentMillis;
 
     if (useMatrix) {
