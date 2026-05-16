@@ -46,7 +46,8 @@ String responseTime = "";
 
 // Prepare outputs
 ArduinoLEDMatrix matrix;
-int output = 0;
+bool useMatrix = true;
+int output = -1;
 
 // Nixie driver
 
@@ -68,8 +69,6 @@ unsigned long previousStrobeTime = 0;
 
 const unsigned long wifiRetryInterval = 12000;
 unsigned long previousWifiRetry = 0;
-
-bool useMatrix = true;
 
 
 /* -------------------------------------------------------------------------- */
