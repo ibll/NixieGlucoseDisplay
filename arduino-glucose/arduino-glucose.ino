@@ -150,7 +150,11 @@ void loop() {
       matrix.endDraw();
     }
 
-    // Get output as a number for display on nixies. Errors with text show as 0's
+    // Get output as a number for display on nixies
+    // Any response with a letter, such as an error
+    // message, will convert the output to 0.
+    // I've decided not to display previous readings
+    // when disconnected to prevent showing stale data
     output = atoi(response);
 
     // Animate transition on nixies
@@ -393,7 +397,7 @@ static void animateSlotMachine(int from, int to) {
 
   uint8_t fd[3] = {0, 0, 0};
   uint8_t td[3] = {0, 0, 0};
-  if (from >= 0) split3(from, fd);
+  split3(from, fd);
   split3(to, td);
 
   Serial.print("Animating from ");
@@ -424,9 +428,13 @@ static void animateSlotMachine(int from, int to) {
 }
 
 
+// Takes the integer v and puts its digits into d[]
 /* -------------------------------------------------------------------------- */
 static inline void split3(int v, uint8_t d[3]) {
 /* -------------------------------------------------------------------------- */
+  if (v < 0) v = 0;
+  if (v > 999) v = 999;
+
   d[0] = (v / 100) % 10; // hundreds
   d[1] = (v / 10) % 10;  // tens
   d[2] = v % 10;         // ones
