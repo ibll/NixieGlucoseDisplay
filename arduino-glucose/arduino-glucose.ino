@@ -145,81 +145,111 @@ void loop() {
 }
 
 
+// Read the http body
+/* -------------------------------------------------------------------------- */
+static void parsePayload(const String &body, String &glucose, String &timestamp) {
+/* -------------------------------------------------------------------------- */
+  glucose = "";
+  timestamp = "";
+
+  int start = 0;
+  int lineNo = 0;
+
+  if (body.length() == 0) return;
+
+  while (start <= body.length()) {
+    int idx = body.indexOf('\n', start);
+    String line;
+
+    if (idx == -1) { // last segment (no trailing newline)
+      if (start < body.length()) {
+        line = body.substring(start);
+        line.trim();
+      } else {
+        break;
+      }
+    } else {
+      line = body.substring(start, idx);
+      line.trim();
+    }
+
+    if (lineNo == 0) glucose = line;
+    if (lineNo == 2) timestamp = line;
+
+    if (idx == -1) break;
+    start = idx + 1;
+    lineNo++;
+  }
+}
+
+
 // Populates response and responseTime
 /* -------------------------------------------------------------------------- */
 void getResponse() {
 /* -------------------------------------------------------------------------- */
   waitConnectWifi();
 
-  Serial.print("Getting... ");
   digitalWrite(LED_BUILTIN, HIGH);
+  Serial.print("Getting... ");
+
+  response = "";
+  responseTime = "";
 
   // Make request
-  http.setTimeout(10000);
-  http.get("/");
-  int statusCode = http.responseStatusCode();
+  http.setHttpResponseTimeout(10000);
 
-  if (statusCode <= 0) {
-    // Library error
-    response = "F" + String(statusCode);
-  } else if (statusCode != 200) {
-    // Server error
-    response = "E" + String(statusCode);
-  } else {
-    // All good
+  do {
+    int reqErr = http.get("/");
+    if (reqErr != 0) {
+      response = "A" + String(reqErr);
+      Serial.print("Request Error: "); Serial.println(reqErr);
+      break;
+    }
+
+    int statusCode = http.responseStatusCode();
+    if (statusCode < 0) {
+      response = "B" + String(statusCode);
+      Serial.print("Response Error: "); Serial.println(statusCode);
+      break;
+    }
+
+    if (statusCode != 200) {
+      response = "C" + String(statusCode);
+      Serial.print("HTTP Error: "); Serial.println(statusCode);
+      break;
+    }
+
     String body = http.responseBody();
     body.trim();
 
-    // Parse lines
-    response = "";
-    responseTime = "";
-
-    int start = 0;
-    int lineNo = 0;
-    if (body.length() != 0) {
-      while (start <= body.length()) {
-        String line;
-        int idx = body.indexOf('\n', start);
-        if (idx == -1) { // last segment (no trailing newline)
-          if (start < body.length()) {
-            line = body.substring(start);
-            line.trim();
-          }
-        } else {
-          line = body.substring(start, idx);
-          line.trim();
-        }
-
-        switch (lineNo) {
-          case 0: // Blood glucose
-            response = line;
-            break;
-          case 1: // Trend description
-            break;
-          case 2: // Time
-            responseTime = line;
-            break;
-        }
-
-        if (idx == -1) break;
-
-        start = idx + 1;
-        lineNo++;
-      }
+    if (body.length() == 0) {
+      response = "MTY";
+      break;
     }
-  }
 
-  client.stop();
+    parsePayload(body, response, responseTime);
 
-  Serial.println(response);
+    if (response.length() == 0) {
+      response = "BAD";
+    }
+
+  } while (false);
+
+  http.stop();
   digitalWrite(LED_BUILTIN, LOW);
+
+  if (responseTime.length() > 0) {
+    Serial.println(response + " @" + responseTime);
+  } else {
+    Serial.println(response);
+  }
 }
 
 
 /* -------------------------------------------------------------------------- */
 void waitConnectWifi() {
 /* -------------------------------------------------------------------------- */
-  if (WiFi.status() == WL_CONNECTED) return;
+  if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != NO_IP) return;
 
   matrix.loadFrame(Icon::noWifi);
 
@@ -227,10 +257,10 @@ void waitConnectWifi() {
   Serial.println(_SSID);
 
   previousWifiRetry = 0;
- 
+
   // Display bouncing wifi animation until connected
   while (WiFi.status() != WL_CONNECTED || WiFi.localIP() == NO_IP) {
-    unsigned long currentMillis = millis();
+    currentMillis = millis();
 
     if (previousWifiRetry == 0 || (currentMillis - previousWifiRetry >= wifiRetryInterval)) {
       // Attempt to connect to WiFi network:
@@ -304,7 +334,7 @@ static void animateSlotMachine(int from, int to) {
   // Animate out
   for (uint8_t i = 0; i < 10; ++i) showFrame(i, i, td[2]);
   for (uint8_t i = 0; i < 10; ++i) showFrame(i, td[1], td[2]);
-  
+
   // Finish
   showFrame(td[0], td[1], td[2]);
 }
@@ -313,14 +343,14 @@ static void animateSlotMachine(int from, int to) {
 /* -------------------------------------------------------------------------- */
 static inline void split3(int v, uint8_t d[3]) {
 /* -------------------------------------------------------------------------- */
-    d[0] = (v / 100) % 10; // hundreds
-    d[1] = (v / 10) % 10;  // tens
-    d[2] = v % 10;         // ones
+  d[0] = (v / 100) % 10; // hundreds
+  d[1] = (v / 10) % 10;  // tens
+  d[2] = v % 10;         // ones
 }
 
 
 /* -------------------------------------------------------------------------- */
 static inline int join3(int leftHundreds, int midTens, int rightOnes) {
 /* -------------------------------------------------------------------------- */
-    return leftHundreds * 100 + midTens * 10 + rightOnes;
+  return leftHundreds * 100 + midTens * 10 + rightOnes;
 }
