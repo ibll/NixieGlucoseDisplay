@@ -61,8 +61,12 @@ Omnixie_NTDB nixieClock(11, 8, 12, 10, 6, 5, NTDBcount);
 unsigned long currentMillis;
 const unsigned long requestInterval = 60 * 1000;
 unsigned long previousRequestTime = -requestInterval;
+
 const unsigned long strobeInterval = 6 * 60 * 1000; // New blood sugar every 5 minutes, we should wait at least 6 for a new reading
 unsigned long previousStrobeTime = 0;
+
+const unsigned long wifiRetryInterval = 12000;
+unsigned long previousWifiRetry = 0;
 
 
 /* -------------------------------------------------------------------------- */
@@ -222,11 +226,18 @@ void waitConnectWifi() {
   Serial.print("Attempting to connect to SSID: ");
   Serial.println(_SSID);
 
-  // Attempt to connect to WiFi network:
-  WiFi.begin(_SSID, _PASS);
-  
+  previousWifiRetry = 0;
+ 
   // Display bouncing wifi animation until connected
   while (WiFi.status() != WL_CONNECTED || WiFi.localIP() == NO_IP) {
+    unsigned long currentMillis = millis();
+
+    if (previousWifiRetry == 0 || (currentMillis - previousWifiRetry >= wifiRetryInterval)) {
+      // Attempt to connect to WiFi network:
+      WiFi.begin(_SSID, _PASS);
+      previousWifiRetry = currentMillis;
+    }
+
     matrix.loadFrame(Icon::wifi);
     delay(500);
     matrix.loadFrame(Icon::wifi1);
@@ -237,10 +248,8 @@ void waitConnectWifi() {
     delay(500);
 
     // Cathode poisoning prevention, if it takes a long time to reconnect to wifi
-    currentMillis = millis();
-
     if (currentMillis - previousStrobeTime >= strobeInterval) {
-      animateSlotMachine(output, 000);
+      animateSlotMachine(output, 0);
       previousStrobeTime = currentMillis;
     }
   }
