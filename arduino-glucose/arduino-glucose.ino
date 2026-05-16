@@ -36,15 +36,23 @@ char _PASS[] = SECRET_PASS;
 char serverAddress[] = SECRET_ADDRESS;
 int  serverPort      = SECRET_PORT;
 
+#define HTTP_RESPONSE_TIMEOUT 10000
 WiFiSSLClient client;
-HttpClient  http(client, serverAddress, serverPort);
+HttpClient http(client, serverAddress, serverPort);
 IPAddress NO_IP(0,0,0,0);
 
-// Network response
-String response = "";
-String responseTime = "";
+// Response buffers
+
+#define RESPONSE_LEN      12
+#define RESPONSE_TIME_LEN 48
+#define HTTP_BODY_LEN     256
+char response[RESPONSE_LEN];
+char responseTime[RESPONSE_TIME_LEN];
+char previousResponseTime[RESPONSE_TIME_LEN];
+char body[HTTP_BODY_LEN];
 
 // Prepare outputs
+
 ArduinoLEDMatrix matrix;
 bool useMatrix = true;
 int output = -1;
@@ -61,22 +69,24 @@ Omnixie_NTDB nixieClock(11, 8, 12, 10, 6, 5, NTDBcount);
 // Periodic events
 
 unsigned long currentMillis;
+
 const unsigned long requestInterval = 60 * 1000;
 unsigned long previousRequestTime = -requestInterval;
 
 const unsigned long strobeInterval = 6 * 60 * 1000; // New blood sugar every 5 minutes, we should wait at least 6 for a new reading
 unsigned long previousStrobeTime = 0;
 
-const unsigned long wifiRetryInterval = 12000;
+const unsigned long wifiRetryInterval = 15000;
 unsigned long previousWifiRetry = 0;
 
 
 /* -------------------------------------------------------------------------- */
 void setup() {
 /* -------------------------------------------------------------------------- */
+  // Prepare standard outputs
   Serial.begin(115200);
-  if (useMatrix) matrix.begin();
-  pinMode(LED_BUILTIN, OUTPUT);
+  if (useMatrix) matrix.begin(); // Shows current reading/error
+  pinMode(LED_BUILTIN, OUTPUT); // Indicates when running getResponse
 
   Serial.println("\n\nHello at 115200 baud!");
 
@@ -86,8 +96,7 @@ void setup() {
     while (true);
   }
 
-  String fv = WiFi.firmwareVersion();
-  if (fv < WIFI_FIRMWARE_LATEST_VERSION) {
+  if (WiFi.firmwareVersion() < WIFI_FIRMWARE_LATEST_VERSION) {
     Serial.println("Please upgrade the firmware");
     for (int i = 0; i < 5; i++) {
       if (useMatrix) matrix.loadFrame(Icon::wifiUpgrade);
@@ -98,6 +107,8 @@ void setup() {
   }
 
   waitConnectWifi();
+
+  http.setHttpResponseTimeout(HTTP_RESPONSE_TIMEOUT);
 
   nixieClock.setHVPower(true);
   nixieClock.setBrightness(0xff);
@@ -111,30 +122,39 @@ void loop() {
 /* -------------------------------------------------------------------------- */
   currentMillis = millis();
 
-  // Recheck glucose
+  // Recheck glucose if long enough since previous
   if (currentMillis - previousRequestTime >= requestInterval) {
     int previousOutput = output;
-    String previousResponseTime = responseTime;
+    strncpy(previousResponseTime, responseTime, RESPONSE_TIME_LEN - 1);
+    previousResponseTime[RESPONSE_TIME_LEN - 1] = '\0';
 
+    // Try to get glucose reading and time of reading
+    // Glucose/error information stored to response
+    // Reading time, if any, stored to responseTime
     getResponse();
 
+    // Repsonse reading might take a while, update again
     currentMillis = millis();
+    // Mark that we've gotten the reading and we won't need one for a bit
     previousRequestTime = currentMillis;
 
+    // Display output from response
     if (useMatrix) {
       matrix.beginDraw();
       matrix.stroke(0xFFFFFFFF);
       matrix.textFont(Font_4x6);
       matrix.beginText(0, 1, 0xFFFFFF);
-      matrix.println(response + "    ");
+      matrix.print(response);
+      matrix.println("    ");
       matrix.endText();
       matrix.endDraw();
     }
 
-    output = response.toInt();
+    // Get output as a number for display on nixies. Errors with text show as 0's
+    output = atoi(response);
 
-    // Animate transition
-    if (previousOutput != output || previousResponseTime != responseTime) {
+    // Animate transition on nixies
+    if (previousOutput != output || strcmp(previousResponseTime, responseTime) != 0) {
       animateSlotMachine(previousOutput, output);
       previousStrobeTime = currentMillis;
     }
@@ -146,43 +166,53 @@ void loop() {
     animateSlotMachine(output, output);
   }
 
-  delay(1000); // Wait a second
+  // Wait a second
+  delay(1000);
 }
 
 
 // Read the http body
 /* -------------------------------------------------------------------------- */
-static void parsePayload(const String &body, String &glucose, String &timestamp) {
+static void parsePayload(const char *body, char *glucose, char *timestamp) {
 /* -------------------------------------------------------------------------- */
-  glucose = "";
-  timestamp = "";
+  glucose[0] = '\0';
+  timestamp[0] = '\0';
 
-  int start = 0;
+  int lineStart = 0;
   int lineNo = 0;
+  int bodyLen = strlen(body);
 
-  if (body.length() == 0) return;
-
-  while (start <= body.length()) {
-    int idx = body.indexOf('\n', start);
-    String line;
-
-    if (idx == -1) { // last segment (no trailing newline)
-      if (start < body.length()) {
-        line = body.substring(start);
-        line.trim();
-      } else {
+  // Find next newline character
+  while (lineStart < bodyLen) {
+    int newlineIndex = -1;
+    for (int i = lineStart; i < bodyLen; i++) {
+      if (body[i] == '\n') {
+        newlineIndex = i;
         break;
       }
-    } else {
-      line = body.substring(start, idx);
-      line.trim();
     }
 
-    if (lineNo == 0) glucose = line;
-    if (lineNo == 2) timestamp = line;
+    // If no newline character found, end of body is end of line
+    int lineEnd = (newlineIndex == -1) ? bodyLen : newlineIndex;
+    int lineLen = lineEnd - lineStart;
 
-    if (idx == -1) break;
-    start = idx + 1;
+    // Extract glucose value
+    if (lineNo == 0 && lineLen < RESPONSE_LEN) {
+      strncpy(glucose, body + lineStart, lineLen);
+      glucose[lineLen] = '\0';
+    }
+
+    // Extract timestamp
+    if (lineNo == 2 && lineLen < RESPONSE_TIME_LEN) {
+      strncpy(timestamp, body + lineStart, lineLen);
+      timestamp[lineLen] = '\0';
+    }
+
+    // Exit on last line
+    if (newlineIndex == -1) break;
+
+    // Otherwise, move start of next line past newline character
+    lineStart = newlineIndex + 1;
     lineNo++;
   }
 }
@@ -192,59 +222,86 @@ static void parsePayload(const String &body, String &glucose, String &timestamp)
 /* -------------------------------------------------------------------------- */
 void getResponse() {
 /* -------------------------------------------------------------------------- */
+  // Ensure WiFi is connected
   waitConnectWifi();
 
+  // Indicate fetch start on LED
   digitalWrite(LED_BUILTIN, HIGH);
   Serial.print("Getting... ");
 
-  response = "";
-  responseTime = "";
+  // Mark input buffers empty
+  response[0] = '\0';
+  responseTime[0] = '\0';
 
-  // Make request
-  http.setHttpResponseTimeout(10000);
-
+  // Do-while-false allows for breaking to clean-exit code
   do {
+    // Make request
     int reqErr = http.get("/");
     if (reqErr != 0) {
-      response = "A" + String(reqErr);
-      Serial.print("Request Error: "); Serial.println(reqErr);
+      // Network/connection error
+      snprintf(response, sizeof(response), "A%d", reqErr);
+      Serial.print("Request Error: ");
+      Serial.println(reqErr);
       break;
     }
 
     int statusCode = http.responseStatusCode();
     if (statusCode < 0) {
-      response = "B" + String(statusCode);
-      Serial.print("Response Error: "); Serial.println(statusCode);
+      // Response parsing error
+      snprintf(response, sizeof(response), "B%d", statusCode);
+      Serial.print("Response Error: ");
+      Serial.println(statusCode);
       break;
     }
 
     if (statusCode != 200) {
-      response = "C" + String(statusCode);
-      Serial.print("HTTP Error: "); Serial.println(statusCode);
+      // Server error
+      snprintf(response, sizeof(response), "C%d", statusCode);
+      Serial.print("HTTP Error: ");
+      Serial.println(statusCode);
       break;
     }
 
-    String body = http.responseBody();
-    body.trim();
+    // Only want to handle the body,
+    // so move read head after headers
+    http.skipResponseHeaders();
 
-    if (body.length() == 0) {
-      response = "MTY";
+    // Read entire response into fixed buffer while data can be read
+    int bodyIdx = 0;
+    while (http.available() && bodyIdx < (sizeof(body) - 1))
+      body[bodyIdx++] = http.read();
+    body[bodyIdx] = '\0';
+
+    // If response is empty, set an error
+    if (bodyIdx == 0) {
+      strncpy(response, "MTY", sizeof(response) - 1);
+      response[sizeof(response) - 1] = '\0';
       break;
     }
 
+    // Parse body for glucose and timestamp
+    // Updates response and responseTime
     parsePayload(body, response, responseTime);
 
-    if (response.length() == 0) {
-      response = "BAD";
+    // If parsing failed, raise error
+    if (response[0] == '\0') {
+      strncpy(response, "BAD", sizeof(response) - 1);
+      response[sizeof(response) - 1] = '\0';
     }
 
   } while (false);
 
+  // Close HTTP connection
   http.stop();
+
+  // Indicate fetch done
   digitalWrite(LED_BUILTIN, LOW);
 
-  if (responseTime.length() > 0) {
-    Serial.println(response + " @" + responseTime);
+  // Print result
+  if (responseTime[0] != '\0') {
+    Serial.print(response);
+    Serial.print(" @");
+    Serial.println(responseTime);
   } else {
     Serial.println(response);
   }
@@ -254,26 +311,39 @@ void getResponse() {
 /* -------------------------------------------------------------------------- */
 void waitConnectWifi() {
 /* -------------------------------------------------------------------------- */
+  // WiFi already connected, return
   if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != NO_IP) return;
 
+  // Indicate connection lost
   if (useMatrix) matrix.loadFrame(Icon::noWifi);
-
   Serial.print("Attempting to connect to SSID: ");
   Serial.println(_SSID);
 
-  previousWifiRetry = 0;
+  previousWifiRetry = 0; // When did we last try to connect to the wifi?
+  int wifiRetryAttempts = 0; // How many times have we retried?
 
-  // Display bouncing wifi animation until connected
+  // Loop until connected successfully
   while (WiFi.status() != WL_CONNECTED || WiFi.localIP() == NO_IP) {
     currentMillis = millis();
 
+    // Try to connect if we've waited long enough since the last attempt
     if (previousWifiRetry == 0 || (currentMillis - previousWifiRetry >= wifiRetryInterval)) {
+      wifiRetryAttempts++;
+
+      // Fully reset wifi stack after a string of failures
+      if (wifiRetryAttempts % 10 == 0) {
+        Serial.println("Resetting WiFi stack...");
+        WiFi.disconnect();
+        delay(1000);
+      }
+
       // Attempt to connect to WiFi network:
       WiFi.begin(_SSID, _PASS);
       previousWifiRetry = currentMillis;
     }
 
     if (useMatrix) {
+      // Display bouncing wifi animation until connected
       matrix.loadFrame(Icon::wifi);
       delay(500);
       matrix.loadFrame(Icon::wifi1);
@@ -283,6 +353,7 @@ void waitConnectWifi() {
       matrix.loadFrame(Icon::wifi3);
       delay(500);
     } else {
+      // Just wait
       delay(2000);
     }
 
@@ -325,7 +396,11 @@ static void animateSlotMachine(int from, int to) {
   if (from >= 0) split3(from, fd);
   split3(to, td);
 
-  Serial.println("Animating from " + String(from) + " to " + String(to) + "...");
+  Serial.print("Animating from ");
+  Serial.print(from);
+  Serial.print(" to ");
+  Serial.print(to);
+  Serial.println("...");
 
   // Animate in
   for (uint8_t i = 0; i < 10; ++i) {
