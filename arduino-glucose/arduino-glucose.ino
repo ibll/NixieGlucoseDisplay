@@ -151,9 +151,10 @@ void getResponse() {
 
   // Make request
   http.begin(client, serverAddress, serverPort);
-  http.setTimeout(3000);
+  http.setTimeout(10000);
   http.addHeader("User-Agent: Arduino UNO R4 Wifi");
-  // http.addHeader("Connection: close");
+  http.addHeader("Connection: close");
+
   int statusCode = http.GET();
 
   if (statusCode <= 0) {
@@ -185,7 +186,7 @@ void getResponse() {
         line = body.substring(start, idx);
         line.trim();
       }
-      
+
       switch (lineNo) {
         case 0: // Blood glucose
           response = line;
@@ -203,6 +204,8 @@ void getResponse() {
       lineNo++;
     }
   }
+
+  http.stop();
 
   Serial.println(response);
   digitalWrite(LED_BUILTIN, LOW);
