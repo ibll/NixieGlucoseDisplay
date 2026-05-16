@@ -156,10 +156,10 @@ void getResponse() {
   // Make request
   http.begin(client, serverAddress, serverPort);
   http.setTimeout(10000);
-  http.addHeader("User-Agent: Arduino UNO R4 Wifi");
-  http.addHeader("Connection: close");
+  http.addHeader("User-Agent", "Arduino UNO R4 Wifi");
+  http.addHeader("Connection", "close");
 
-  int statusCode = http.GET();
+  int statusCode = http.GET("/");
 
   if (statusCode <= 0) {
     // Library error
@@ -178,34 +178,36 @@ void getResponse() {
 
     int start = 0;
     int lineNo = 0;
-    while (start <= body.length()) {
-      String line;
-      int idx = body.indexOf('\n', start);
-      if (idx == -1) { // last segment (no trailing newline)
-        if (start < body.length()) {
-          line = body.substring(start);
+    if (body.length() != 0) {
+      while (start <= body.length()) {
+        String line;
+        int idx = body.indexOf('\n', start);
+        if (idx == -1) { // last segment (no trailing newline)
+          if (start < body.length()) {
+            line = body.substring(start);
+            line.trim();
+          }
+        } else {
+          line = body.substring(start, idx);
           line.trim();
         }
-      } else {
-        line = body.substring(start, idx);
-        line.trim();
+
+        switch (lineNo) {
+          case 0: // Blood glucose
+            response = line;
+            break;
+          case 1: // Trend description
+            break;
+          case 2: // Time
+            responseTime = line;
+            break;
+        }
+
+        if (idx == -1) break;
+
+        start = idx + 1;
+        lineNo++;
       }
-
-      switch (lineNo) {
-        case 0: // Blood glucose
-          response = line;
-          break;
-        case 1: // Trend description
-          break;
-        case 2: // Time
-          responseTime = line;
-          break;
-      }
-
-      if (idx == -1) break;
-
-      start = idx + 1;
-      lineNo++;
     }
   }
 
@@ -220,9 +222,9 @@ void getResponse() {
 void waitConnectWifi() {
 /* -------------------------------------------------------------------------- */
   if (WiFi.status() == WL_CONNECTED) return;
-  
+
   matrix.loadFrame(Icon::noWifi);
-  
+
   Serial.print("Attempting to connect to SSID: ");
   Serial.println(_SSID);
 
