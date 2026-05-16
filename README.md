@@ -48,7 +48,8 @@ steady
 2. Install required libraries:
    - ArduinoGraphics
    - Arduino_LED_Matrix
-   - R4HttpClient (for Arduino UNO R4 WiFi)
+   - ArduinoHttpClient
+   - WiFiS3
 3. Fill out `arduino_secrets.h.template` and rename it to `arduino_secrets.h`
 4. Upload the project to your Arduino. If everything went through, it should show a Wi-Fi connection sequence and try to pull from your server. View at 115200 baud when connected to serial to check for debug info
 
