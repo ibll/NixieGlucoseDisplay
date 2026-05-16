@@ -45,7 +45,7 @@ String responseTime = "";
 
 // Prepare outputs
 ArduinoLEDMatrix matrix;
-int output = -1;
+int output = 0;
 
 // Nixie driver
 
@@ -60,9 +60,9 @@ Omnixie_NTDB nixieClock(11, 8, 12, 10, 6, 5, NTDBcount);
 
 unsigned long currentMillis;
 const unsigned long requestInterval = 60 * 1000;
-unsigned long previousRequestTime = -1;
+unsigned long previousRequestTime = -requestInterval;
 const unsigned long strobeInterval = 6 * 60 * 1000; // New blood sugar every 5 minutes, we should wait at least 6 for a new reading
-unsigned long previousStrobeTime = -1;
+unsigned long previousStrobeTime = 0;
 
 
 /* -------------------------------------------------------------------------- */
@@ -106,10 +106,10 @@ void loop() {
   currentMillis = millis();
 
   // Recheck glucose
-  if (previousRequestTime == -1 || currentMillis - previousRequestTime >= requestInterval) {
+  if (currentMillis - previousRequestTime >= requestInterval) {
     int previousOutput = output;
     String previousResponseTime = responseTime;
-    
+
     getResponse();
     previousRequestTime = currentMillis;
 
@@ -131,9 +131,9 @@ void loop() {
   }
 
   // Fallback poisoning prevention
-  if (previousStrobeTime == -1 || currentMillis - previousStrobeTime >= strobeInterval) {
-    animateSlotMachine(output, output);
+  if (currentMillis - previousStrobeTime >= strobeInterval) {
     previousStrobeTime = currentMillis;
+    animateSlotMachine(output, output);
   }
 
   delay(1000); // Wait a second
