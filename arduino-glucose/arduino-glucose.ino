@@ -16,7 +16,8 @@
   Connect the 12V DC power to the NTDB board 
 */
 
-#include <R4HttpClient.h>
+#include <WiFiS3.h>
+#include <ArduinoHttpClient.h>
 
 #include "ArduinoGraphics.h"
 #include "Arduino_LED_Matrix.h"
@@ -36,7 +37,7 @@ char serverAddress[] = SECRET_ADDRESS;
 int  serverPort      = SECRET_PORT;
 
 WiFiSSLClient client;
-R4HttpClient  http;
+HttpClient  http(client, serverAddress, serverPort);
 IPAddress NO_IP(0,0,0,0);
 
 // Network response
@@ -154,22 +155,19 @@ void getResponse() {
   digitalWrite(LED_BUILTIN, HIGH);
 
   // Make request
-  http.begin(client, serverAddress, serverPort);
   http.setTimeout(10000);
-  http.addHeader("User-Agent", "Arduino UNO R4 Wifi");
-  http.addHeader("Connection", "close");
-
-  int statusCode = http.GET("/");
+  http.get("/");
+  int statusCode = http.responseStatusCode();
 
   if (statusCode <= 0) {
     // Library error
     response = "F" + String(statusCode);
-  } else if (statusCode != HTTP_CODE_OK) {
+  } else if (statusCode != 200) {
     // Server error
     response = "E" + String(statusCode);
   } else {
     // All good
-    String body = http.getBody();
+    String body = http.responseBody();
     body.trim();
 
     // Parse lines
@@ -211,7 +209,7 @@ void getResponse() {
     }
   }
 
-  http.stop();
+  client.stop();
 
   Serial.println(response);
   digitalWrite(LED_BUILTIN, LOW);
