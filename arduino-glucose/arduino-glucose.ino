@@ -69,19 +69,21 @@ unsigned long previousStrobeTime = 0;
 const unsigned long wifiRetryInterval = 12000;
 unsigned long previousWifiRetry = 0;
 
+bool useMatrix = false;
+
 
 /* -------------------------------------------------------------------------- */
 void setup() {
 /* -------------------------------------------------------------------------- */
   Serial.begin(115200);
-  matrix.begin();
+  if (useMatrix) matrix.begin();
   pinMode(LED_BUILTIN, OUTPUT);
 
   Serial.println("\n\nHello at 115200 baud!");
 
   if (WiFi.status() == WL_NO_MODULE) {
     Serial.println("Communication with WiFi module failed!");
-    matrix.loadFrame(Icon::noWifi);
+    if (useMatrix) matrix.loadFrame(Icon::noWifi);
     while (true);
   }
 
@@ -89,9 +91,9 @@ void setup() {
   if (fv < WIFI_FIRMWARE_LATEST_VERSION) {
     Serial.println("Please upgrade the firmware");
     for (int i = 0; i < 5; i++) {
-      matrix.loadFrame(Icon::wifiUpgrade);
+      if (useMatrix) matrix.loadFrame(Icon::wifiUpgrade);
       delay(500);
-      matrix.loadFrame(Icon::wifi);
+      if (useMatrix) matrix.loadFrame(Icon::wifi);
       delay(500);
     }
   }
@@ -118,13 +120,15 @@ void loop() {
     getResponse();
     previousRequestTime = currentMillis;
 
-    matrix.beginDraw();
-    matrix.stroke(0xFFFFFFFF);
-    matrix.textFont(Font_4x6);
-    matrix.beginText(0, 1, 0xFFFFFF);
-    matrix.println(response + "    ");
-    matrix.endText();
-    matrix.endDraw();
+    if (useMatrix) {
+      matrix.beginDraw();
+      matrix.stroke(0xFFFFFFFF);
+      matrix.textFont(Font_4x6);
+      matrix.beginText(0, 1, 0xFFFFFF);
+      matrix.println(response + "    ");
+      matrix.endText();
+      matrix.endDraw();
+    }
 
     output = response.toInt();
 
@@ -251,7 +255,7 @@ void waitConnectWifi() {
 /* -------------------------------------------------------------------------- */
   if (WiFi.status() == WL_CONNECTED && WiFi.localIP() != NO_IP) return;
 
-  matrix.loadFrame(Icon::noWifi);
+  if (useMatrix) matrix.loadFrame(Icon::noWifi);
 
   Serial.print("Attempting to connect to SSID: ");
   Serial.println(_SSID);
@@ -268,14 +272,18 @@ void waitConnectWifi() {
       previousWifiRetry = currentMillis;
     }
 
-    matrix.loadFrame(Icon::wifi);
-    delay(500);
-    matrix.loadFrame(Icon::wifi1);
-    delay(500);
-    matrix.loadFrame(Icon::wifi2);
-    delay(500);
-    matrix.loadFrame(Icon::wifi3);
-    delay(500);
+    if (useMatrix) {
+      matrix.loadFrame(Icon::wifi);
+      delay(500);
+      matrix.loadFrame(Icon::wifi1);
+      delay(500);
+      matrix.loadFrame(Icon::wifi2);
+      delay(500);
+      matrix.loadFrame(Icon::wifi3);
+      delay(500);
+    } else {
+      delay(2000);
+    }
 
     // Cathode poisoning prevention, if it takes a long time to reconnect to wifi
     if (currentMillis - previousStrobeTime >= strobeInterval) {
@@ -285,7 +293,7 @@ void waitConnectWifi() {
   }
 
   // Connected, good to go!
-  matrix.loadFrame(Icon::wifiGood);
+  if (useMatrix) matrix.loadFrame(Icon::wifiGood);
 
   delay(1000);
 
