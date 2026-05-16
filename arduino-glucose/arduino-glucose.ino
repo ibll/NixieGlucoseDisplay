@@ -40,9 +40,14 @@ WiFiSSLClient client;
 HttpClient  http(client, serverAddress, serverPort);
 IPAddress NO_IP(0,0,0,0);
 
-// Network response
-String response = "";
-String responseTime = "";
+// Request resposne buffers
+#define RESPONSE_LEN      12
+#define RESPONSE_TIME_LEN 48
+#define HTTP_BODY_LEN     256
+char response[RESPONSE_LEN];
+char responseTime[RESPONSE_TIME_LEN];
+char previousResponseTime[RESPONSE_TIME_LEN];
+char body[HTTP_BODY_LEN];
 
 // Prepare outputs
 ArduinoLEDMatrix matrix;
@@ -86,8 +91,7 @@ void setup() {
     while (true);
   }
 
-  String fv = WiFi.firmwareVersion();
-  if (fv < WIFI_FIRMWARE_LATEST_VERSION) {
+  if (WiFi.firmwareVersion() < WIFI_FIRMWARE_LATEST_VERSION) {
     Serial.println("Please upgrade the firmware");
     for (int i = 0; i < 5; i++) {
       if (useMatrix) matrix.loadFrame(Icon::wifiUpgrade);
@@ -114,7 +118,8 @@ void loop() {
   // Recheck glucose
   if (currentMillis - previousRequestTime >= requestInterval) {
     int previousOutput = output;
-    String previousResponseTime = responseTime;
+    strncpy(previousResponseTime, responseTime, RESPONSE_TIME_LEN - 1);
+    previousResponseTime[RESPONSE_TIME_LEN - 1] = '\0';
 
     getResponse();
 
@@ -126,12 +131,13 @@ void loop() {
       matrix.stroke(0xFFFFFFFF);
       matrix.textFont(Font_4x6);
       matrix.beginText(0, 1, 0xFFFFFF);
-      matrix.println(response + "    ");
+      matrix.print(response);
+      matrix.println("    ");
       matrix.endText();
       matrix.endDraw();
     }
 
-    output = response.toInt();
+    output = atoi(response);
 
     // Animate transition
     if (previousOutput != output || previousResponseTime != responseTime) {
@@ -152,38 +158,42 @@ void loop() {
 
 // Read the http body
 /* -------------------------------------------------------------------------- */
-static void parsePayload(const String &body, String &glucose, String &timestamp) {
+static void parsePayload(const char *body, char *glucose, char *timestamp) {
 /* -------------------------------------------------------------------------- */
-  glucose = "";
-  timestamp = "";
+  glucose[0] = '\0';
+  timestamp[0] = '\0';
 
   int start = 0;
   int lineNo = 0;
+  int bodyLen = strlen(body);
 
-  if (body.length() == 0) return;
-
-  while (start <= body.length()) {
-    int idx = body.indexOf('\n', start);
-    String line;
-
-    if (idx == -1) { // last segment (no trailing newline)
-      if (start < body.length()) {
-        line = body.substring(start);
-        line.trim();
-      } else {
+  while (start <= bodyLen) {
+    // Find newline
+    int idx = -1;
+    for (int i = start; i < bodyLen; i++) {
+      if (body[i] == '\n') {
+        idx = 1;
         break;
       }
-    } else {
-      line = body.substring(start, idx);
-      line.trim();
     }
 
-    if (lineNo == 0) glucose = line;
-    if (lineNo == 2) timestamp = line;
+    int lineEnd = (idx == -1) ? bodyLen : idx;
+    int lineLen = lineEnd - start;
 
-    if (idx == -1) break;
-    start = idx + 1;
-    lineNo++;
+    if (lineNo == 0 && lineLen < RESPONSE_LEN) {
+      strncpy(glucose, body + start, lineLen);
+      glucose[lineLen] = '\0';
+    }
+
+    if (lineNo == 2 && lineLen < RESPONSE_TIME_LEN) {
+      strncpy(timestamp, body + start, lineLen);
+      timestamp[lineLen] = '\0';
+    }
+
+    if (idx == -1) { // last segment (no trailing newline)
+      start = idx + 1;
+      break;
+    }
   }
 }
 
@@ -197,8 +207,8 @@ void getResponse() {
   digitalWrite(LED_BUILTIN, HIGH);
   Serial.print("Getting... ");
 
-  response = "";
-  responseTime = "";
+  response[0] = '\0';
+  responseTime[0] = '\0';
 
   // Make request
   http.setHttpResponseTimeout(10000);
@@ -206,36 +216,48 @@ void getResponse() {
   do {
     int reqErr = http.get("/");
     if (reqErr != 0) {
-      response = "A" + String(reqErr);
-      Serial.print("Request Error: "); Serial.println(reqErr);
+      snprintf(response, sizeof(response), "A%d", reqErr);
+      Serial.print("Request Error: ");
+      Serial.println(reqErr);
       break;
     }
 
     int statusCode = http.responseStatusCode();
     if (statusCode < 0) {
-      response = "B" + String(statusCode);
-      Serial.print("Response Error: "); Serial.println(statusCode);
+      snprintf(response, sizeof(response), "B%d", statusCode);
+      Serial.print("Response Error: ");
+      Serial.println(statusCode);
       break;
     }
 
     if (statusCode != 200) {
-      response = "C" + String(statusCode);
-      Serial.print("HTTP Error: "); Serial.println(statusCode);
+      snprintf(response, sizeof(response), "C%d", statusCode);
+      Serial.print("HTTP Error: ");
+      Serial.println(statusCode);
       break;
     }
 
-    String body = http.responseBody();
-    body.trim();
+    // Only want to handle the body,
+    // so move read head after headers
+    http.skipResponseHeaders();
 
-    if (body.length() == 0) {
-      response = "MTY";
+    // Read entire response into fixed buffer while data can be read
+    int bodyIdx = 0;
+    while (http.available() && bodyIdx < (sizeof(body) - 1))
+      body[bodyIdx++] = http.read();
+    body[bodyIdx] = '\0';
+
+    if (bodyIdx == 0) {
+      strncpy(response, "MTY", sizeof(response) - 1);
+      response[sizeof(response) - 1] = '\0';
       break;
     }
 
     parsePayload(body, response, responseTime);
 
-    if (response.length() == 0) {
-      response = "BAD";
+    if (response[0] == '\0') {
+      strncpy(response, "BAD", sizeof(response) - 1);
+      response[sizeof(response) - 1] = '\0';
     }
 
   } while (false);
@@ -243,8 +265,10 @@ void getResponse() {
   http.stop();
   digitalWrite(LED_BUILTIN, LOW);
 
-  if (responseTime.length() > 0) {
-    Serial.println(response + " @" + responseTime);
+  if (responseTime[0] != '\0') {
+    Serial.print(response);
+    Serial.print(" @");
+    Serial.println(responseTime);
   } else {
     Serial.println(response);
   }
@@ -325,7 +349,11 @@ static void animateSlotMachine(int from, int to) {
   if (from >= 0) split3(from, fd);
   split3(to, td);
 
-  Serial.println("Animating from " + String(from) + " to " + String(to) + "...");
+  Serial.print("Animating from ");
+  Serial.print(from);
+  Serial.print(" to ");
+  Serial.print(to);
+  Serial.println("...");
 
   // Animate in
   for (uint8_t i = 0; i < 10; ++i) {
