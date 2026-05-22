@@ -274,14 +274,32 @@ void getResponse() {
     http.skipResponseHeaders();
 
     // Read entire response into fixed buffer while data can be read
-    int bodyIdx = 0;
-    while (http.available() && bodyIdx < (sizeof(body) - 1))
-      body[bodyIdx++] = http.read();
-    body[bodyIdx] = '\0';
-
-    // If response is empty, set an error
-    if (bodyIdx == 0) {
+    int len = http.contentLength();
+ 
+    // Indicate if body is empty
+    if (len <= 0) {
+      Serial.println("HTTP Body was empty");
       strncpy(response, "MTY", sizeof(response) - 1);
+      response[sizeof(response) - 1] = '\0';
+      break;
+    }
+
+    // Indicate if response is too long as has an overflow for our body array
+    if (len >= (int)sizeof(body)) {
+      Serial.println("HTTP Body longer than expected");
+      strncpy(response, "OVF", sizeof(response) - 1);
+      response[sizeof(response) - 1] = '\0';
+      break;
+    }
+
+    // Fill body
+    size_t n = http.readBytes(body, len);
+    body[n] = '\0';
+
+    // Indicate if body didn't get properly filled, likely indicates readBytes timeout
+    if (n != (size_t)len) {
+      Serial.println("Body couldn't be copied from HTTP");
+      strncpy(response, "TMO", sizeof(response) - 1);
       response[sizeof(response) - 1] = '\0';
       break;
     }
@@ -290,10 +308,21 @@ void getResponse() {
     // Updates response and responseTime
     parsePayload(body, response, responseTime);
 
-    // If parsing failed, raise error
+    // Indicate if there was a parsing error (response is empty)
     if (response[0] == '\0') {
-      strncpy(response, "BAD", sizeof(response) - 1);
+      Serial.println("Error parsing data from body");
+      strncpy(response, "PRS", sizeof(response) - 1);
       response[sizeof(response) - 1] = '\0';
+      break;
+    }
+
+    // Finally, print result
+    if (responseTime[0] != '\0') {
+      Serial.print(response);
+      Serial.print(" @");
+      Serial.println(responseTime);
+    } else {
+      Serial.println(response);
     }
 
   } while (false);
@@ -303,15 +332,6 @@ void getResponse() {
 
   // Indicate fetch done
   digitalWrite(LED_BUILTIN, LOW);
-
-  // Print result
-  if (responseTime[0] != '\0') {
-    Serial.print(response);
-    Serial.print(" @");
-    Serial.println(responseTime);
-  } else {
-    Serial.println(response);
-  }
 }
 
 
