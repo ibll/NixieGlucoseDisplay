@@ -410,7 +410,7 @@ static inline void showFrame(uint8_t left, uint8_t mid, uint8_t right, uint8_t m
   mask &= tubeBitmask; // crop to # of digits
   nixieClock.setNumber(join3(left, mid, right), mask);
   nixieClock.display();
-  delay(100);
+  delay(350);
 }
 
 
